@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="es" data-type="sans" data-palette="papel">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DM10 · Últimas ofertas</title>
+<style>
+  :root { --bg-paper:#f6f1e7; --bg-head:#e9e1cf; --bg-row-alt:#faf6ee; --text-ink:#242424; --text-dim:#7a7468; --text-bad:#b3261e; --accent:#1d4e89; --line:#d9d0bd; --t-title:1.35rem; --font:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  [data-palette="noche"] { --bg-paper:#14171c; --bg-head:#1f242c; --bg-row-alt:#181c22; --text-ink:#e6e6e6; --text-dim:#8b93a0; --text-bad:#ff8a80; --accent:#6aa9ff; --line:#2b323c; }
+  [data-palette="cancha"] { --bg-paper:#ffffff; --bg-head:#fdeee4; --bg-row-alt:#fff8f3; --text-ink:#1d1d1f; --text-dim:#85796f; --text-bad:#c62828; --accent:#e8590c; --line:#f0d9c9; }
+  [data-type="serif"] { --font:Georgia,"Times New Roman",serif; }
+  [data-type="mono"] { --font:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg-paper); color:var(--text-ink); font-family:var(--font); font-size:15px; }
+  header { padding:14px 16px 8px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  h1 { margin:0; font-size:var(--t-title); color:var(--accent); flex:1 1 auto; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:0 16px 10px; font-size:.9rem; }
+  button, select, input[type=search] { font:inherit; color:var(--text-ink); background:var(--bg-head); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  label { color:var(--text-dim); display:flex; gap:4px; align-items:center; }
+  #status { color:var(--text-dim); padding:0 16px 8px; font-size:.85rem; min-height:1.3em; }
+  #status.err { color:var(--text-bad); }
+  .progress { height:3px; background:var(--line); margin:0 16px 8px; border-radius:2px; overflow:hidden; display:none; }
+  .progress i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  .wrap { overflow:auto; max-height:calc(100vh - 150px); border-top:1px solid var(--line); }
+  table { border-collapse:separate; border-spacing:0; width:100%; min-width:760px; }
+  th, td { padding:7px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--bg-head); cursor:pointer; user-select:none; z-index:2; font-size:.85rem; }
+  th.sorted-asc::after { content:" ▲"; } th.sorted-desc::after { content:" ▼"; }
+  td:first-child, th:first-child { position:sticky; left:0; z-index:1; background:var(--bg-paper); font-weight:600; }
+  th:first-child { z-index:3; background:var(--bg-head); }
+  tbody tr:nth-child(even) td { background:var(--bg-row-alt); }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.raw { white-space:normal; max-width:320px; color:var(--text-dim); font-size:.82rem; }
+  tr.none td { color:var(--text-dim); }
+  tr.unclear td.offer { color:var(--text-bad); }
+  .tag { font-size:.72rem; color:var(--text-dim); margin-left:6px; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DM10 · Últimas ofertas</h1>
+  <div style="display:flex;gap:6px">
+    <select id="type" aria-label="Tipografía"><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select>
+    <select id="palette" aria-label="Paleta"><option value="papel">Papel</option><option value="noche">Noche</option><option value="cancha">Cancha</option></select>
+  </div>
+</header>
+<div class="bar">
+  <button id="reload" class="primary">↻ Actualizar</button>
+  <input id="q" type="search" placeholder="Buscar jugador, usuario o equipo…">
+  <label><input id="onlyOffers" type="checkbox"> Solo con oferta</label>
+</div>
+<div id="status"></div>
+<div class="progress" id="prog"><i></i></div>
+<div class="wrap">
+<table>
+  <thead><tr>
+    <th data-k="name">Jugador</th>
+    <th data-k="when">Última oferta</th>
+    <th data-k="user">Usuario</th>
+    <th data-k="team">Equipo (detectado)</th>
+    <th data-k="salary" class="num">Oferta</th>
+    <th data-k="total" class="num">Total</th>
+    <th data-k="replies" class="num">Msgs</th>
+    <th>Mensaje</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+<script>
+const API = '/.netlify/functions/forum';
+const BATCH = 10, PARALLEL = 2;
+let data = [], sortKey = 'when', sortDir = -1, loading = false;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtNum = n => n.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+
+// Look-Switcher
+for (const [id, attr] of [['type','data-type'],['palette','data-palette']]) {
+  try { const v = localStorage.getItem('dm10-' + id); if (v) { document.documentElement.setAttribute(attr, v); $(id).value = v; } } catch (e) {}
+  $(id).addEventListener('change', e => {
+    document.documentElement.setAttribute(attr, e.target.value);
+    try { localStorage.setItem('dm10-' + id, e.target.value); } catch (e) {}
+  });
+}
+
+function fmtWhen(w) {
+  if (!w) return '';
+  const [d, t] = w.split(' ');
+  const [y, m, day] = d.split('-');
+  return `${day}/${m} ${t}`;
+}
+function val(r, k) {
+  const l = r.last;
+  switch (k) {
+    case 'name': return r.name.toLowerCase();
+    case 'when': return l?.when || '';
+    case 'user': return (l?.user || '').toLowerCase();
+    case 'team': return (l?.team || '').toLowerCase();
+    case 'salary': return l?.salary ?? -1;
+    case 'total': return l?.salary != null ? l.salary * l.years : -1;
+    case 'replies': return r.replies;
+  }
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase(), only = $('onlyOffers').checked;
+  let rows = data.filter(r => {
+    if (only && !(r.last && r.last.salary != null)) return false;
+    if (!q) return true;
+    return [r.name, r.last?.user, r.last?.team].join(' ').toLowerCase().includes(q);
+  });
+  rows.sort((a, b) => {
+    const x = val(a, sortKey), y = val(b, sortKey);
+    // Zeilen ohne Wert immer ans Ende
+    const ex = x === '' || x === -1, ey = y === '' || y === -1;
+    if (ex !== ey) return ex ? 1 : -1;
+    return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
+  });
+  $('rows').innerHTML = rows.map(r => {
+    const l = r.last;
+    const link = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`;
+    if (!l) return `<tr class="none"><td>${link}</td><td colspan="5">${r.error ? 'error: ' + esc(r.error) : 'sin ofertas'}</td><td class="num">${r.replies}</td><td></td></tr>`;
+    const has = l.salary != null;
+    const later = l.laterPosts ? `<span class="tag">+${l.laterPosts} msg después</span>` : '';
+    return `<tr class="${has ? '' : 'unclear'}"><td>${link}</td>
+      <td>${fmtWhen(l.when)}</td><td>${esc(l.user)}</td><td>${esc(l.team)}</td>
+      <td class="num offer">${has ? fmtNum(l.salary) + ' × ' + l.years : '¿?'}</td>
+      <td class="num">${has ? fmtNum(l.salary * l.years) : ''}</td>
+      <td class="num">${r.replies}${later}</td><td class="raw">${esc(l.raw)}</td></tr>`;
+  }).join('');
+  document.querySelectorAll('th[data-k]').forEach(th => {
+    th.classList.toggle('sorted-asc', th.dataset.k === sortKey && sortDir === 1);
+    th.classList.toggle('sorted-desc', th.dataset.k === sortKey && sortDir === -1);
+  });
+}
+document.querySelectorAll('th[data-k]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.k;
+  if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = (k === 'name' || k === 'user' || k === 'team') ? 1 : -1; }
+  render();
+}));
+$('q').addEventListener('input', render);
+$('onlyOffers').addEventListener('change', render);
+
+async function api(params) {
+  const r = await fetch(API + '?' + new URLSearchParams(params));
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error || 'HTTP ' + r.status);
+  return j;
+}
+function setStatus(t, err) { $('status').textContent = t; $('status').className = err ? 'err' : ''; }
+
+async function reload() {
+  if (loading) return;
+  loading = true; $('reload').disabled = true;
+  $('prog').style.display = 'block'; $('prog').firstElementChild.style.width = '0';
+  data = []; render();
+  try {
+    setStatus('Leyendo la lista de jugadores…');
+    const { threads } = await api({ action: 'list' });
+    if (!threads.length) throw new Error('No se encontraron hilos de jugadores');
+    const chunks = [];
+    for (let i = 0; i < threads.length; i += BATCH) chunks.push(threads.slice(i, i + BATCH));
+    let done = 0, next = 0;
+    async function worker() {
+      while (next < chunks.length) {
+        const c = chunks[next++];
+        try {
+          const res = await api({ action: 'threads', slugs: c.join(',') });
+          data.push(...res.threads);
+        } catch (e) {
+          c.forEach(s => data.push({ slug: s, url: '#', name: s.replace(/^\d+-/, '').replace(/-/g, ' '), replies: 0, last: null, error: e.message }));
+        }
+        done += c.length;
+        $('prog').firstElementChild.style.width = (done / threads.length * 100) + '%';
+        setStatus(`Leídos ${done} de ${threads.length} hilos…`);
+        render();
+      }
+    }
+    await Promise.all(Array.from({ length: PARALLEL }, worker));
+    const errs = data.filter(d => d.error).length;
+    setStatus(`${data.length} hilos · actualizado ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` + (errs ? ` · ${errs} con error` : ''), errs > 0);
+  } catch (e) {
+    setStatus('Error: ' + e.message, true);
+  } finally {
+    loading = false; $('reload').disabled = false;
+    setTimeout(() => { $('prog').style.display = 'none'; }, 600);
+  }
+}
+$('reload').addEventListener('click', reload);
+reload();
+</script>
+</body>
+</html>
