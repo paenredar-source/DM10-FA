@@ -139,6 +139,9 @@ function parseOffer(raw) {
   return { salary: last.salary, years: last.years, team };
 }
 
+// ---------- Puja cerrada ----------
+const CLOSED = /\bpuja\s+(?:cerrada|terminada|finalizada|finalizado|cerrado)\b|\b(?:cerrada|terminada|adjudicada|cerrado|terminado|adjudicado)\b/i;
+
 // ---------- Thread ----------
 function threadName(html, slug) {
   let m = html.match(/og:title["']?\s+content=["']([^"']+)["']/i) || html.match(/content=["']([^"']+)["']\s+(?:property|name)=["']og:title/i);
@@ -188,7 +191,10 @@ async function loadThread(slug) {
       const p = replies[replies.length - 1];
       last = { user: p.user, when: p.when, post: p.post, salary: null, years: null, team: '', raw: p.text.slice(0, 200), laterPosts: 0 };
     }
-    return { slug, url, name, replies: maxPost - 1, last, parsed: posts.length };
+    const closedPost = replies.find(p => CLOSED.test(p.text));
+    const closed = !!closedPost;
+    if (closed && last) last.laterPosts = 0;
+    return { slug, url, name, replies: maxPost - 1, last, closed, closedText: closedPost ? closedPost.text.slice(0, 80) : '', parsed: posts.length };
   } catch (e) {
     return { slug, url, name: slug.replace(/^\d+-/, '').replace(/-/g, ' '), replies: 0, last: null, error: e.message };
   }
@@ -233,5 +239,4 @@ exports.handler = async (event) => {
   }
 };
 
-exports._test = { parseOffer, parsePosts, htmlToText, parseList, resolveDate };
-          
+exports._test = { CLOSED, parseOffer, parsePosts, htmlToText, parseList, resolveDate };
