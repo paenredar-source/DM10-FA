@@ -34,6 +34,8 @@
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
   td.raw { white-space:normal; max-width:320px; color:var(--text-dim); font-size:.82rem; }
   tr.none td { color:var(--text-dim); }
+  tr.closed td { opacity:.55; }
+  .badge { font-size:.7rem; margin-left:6px; padding:1px 6px; border-radius:8px; background:var(--text-bad); color:#fff; vertical-align:middle; }
   tr.unclear td.offer { color:var(--text-bad); }
   .tag { font-size:.72rem; color:var(--text-dim); margin-left:6px; }
   a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
@@ -51,6 +53,7 @@
   <button id="reload" class="primary">↻ Actualizar</button>
   <input id="q" type="search" placeholder="Buscar jugador, usuario o equipo…">
   <label><input id="onlyOffers" type="checkbox"> Solo con oferta</label>
+  <label><input id="hideClosed" type="checkbox"> Ocultar cerradas</label>
 </div>
 <div id="status"></div>
 <div class="progress" id="prog"><i></i></div>
@@ -108,6 +111,7 @@ function render() {
   const q = $('q').value.trim().toLowerCase(), only = $('onlyOffers').checked;
   let rows = data.filter(r => {
     if (only && !(r.last && r.last.salary != null)) return false;
+    if ($('hideClosed').checked && r.closed) return false;
     if (!q) return true;
     return [r.name, r.last?.user, r.last?.team].join(' ').toLowerCase().includes(q);
   });
@@ -120,11 +124,11 @@ function render() {
   });
   $('rows').innerHTML = rows.map(r => {
     const l = r.last;
-    const link = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>`;
-    if (!l) return `<tr class="none"><td>${link}</td><td colspan="5">${r.error ? 'error: ' + esc(r.error) : 'sin ofertas'}</td><td class="num">${r.replies}</td><td></td></tr>`;
+    const link = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` + (r.closed ? `<span class="badge" title="${esc(r.closedText)}">cerrada</span>` : '');
+    if (!l) return `<tr class="none${r.closed ? ' closed' : ''}"><td>${link}</td><td colspan="5">${r.error ? 'error: ' + esc(r.error) : 'sin ofertas'}</td><td class="num">${r.replies}</td><td></td></tr>`;
     const has = l.salary != null;
     const later = l.laterPosts ? `<span class="tag">+${l.laterPosts} msg después</span>` : '';
-    return `<tr class="${has ? '' : 'unclear'}"><td>${link}</td>
+    return `<tr class="${(has ? '' : 'unclear') + (r.closed ? ' closed' : '')}"><td>${link}</td>
       <td>${fmtWhen(l.when)}</td><td>${esc(l.user)}</td><td>${esc(l.team)}</td>
       <td class="num offer">${has ? fmtNum(l.salary) + ' × ' + l.years : '¿?'}</td>
       <td class="num">${has ? fmtNum(l.salary * l.years) : ''}</td>
@@ -142,6 +146,7 @@ document.querySelectorAll('th[data-k]').forEach(th => th.addEventListener('click
 }));
 $('q').addEventListener('input', render);
 $('onlyOffers').addEventListener('change', render);
+$('hideClosed').addEventListener('change', render);
 
 async function api(params) {
   const r = await fetch(API + '?' + new URLSearchParams(params));
