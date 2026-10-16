@@ -35,6 +35,7 @@
   td.raw { white-space:normal; max-width:320px; color:var(--text-dim); font-size:.82rem; }
   tr.none td { color:var(--text-dim); }
   tr.closed td { opacity:.55; }
+  .badge.warn { background:var(--accent); }
   .badge { font-size:.7rem; margin-left:6px; padding:1px 6px; border-radius:8px; background:var(--text-bad); color:#fff; vertical-align:middle; }
   tr.unclear td.offer { color:var(--text-bad); }
   .tag { font-size:.72rem; color:var(--text-dim); margin-left:6px; }
@@ -95,6 +96,16 @@ function fmtWhen(w) {
   const [y, m, day] = d.split('-');
   return `${day}/${m} ${t}`;
 }
+function pendingBadge(r) {
+  const p = r.pending;
+  if (!p || !p.when) return '';
+  const [d, t] = p.when.split(' ');
+  const [y, m, day] = d.split('-').map(Number), [hh, mm] = t.split(':').map(Number);
+  const end = new Date(Date.UTC(y, m - 1, day, hh + p.hours, mm));
+  const pad = n => String(n).padStart(2, '0');
+  const until = `${pad(end.getUTCDate())}/${pad(end.getUTCMonth() + 1)} ${pad(end.getUTCHours())}:${pad(end.getUTCMinutes())}`;
+  return `<span class="badge warn" title="Ficha tras ${p.hours} horas">ficha ${until}</span>`;
+}
 function val(r, k) {
   const l = r.last;
   switch (k) {
@@ -124,7 +135,7 @@ function render() {
   });
   $('rows').innerHTML = rows.map(r => {
     const l = r.last;
-    const link = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` + (r.closed ? `<span class="badge" title="${esc(r.closedText)}">cerrada</span>` : '');
+    const link = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>` + (r.closed ? `<span class="badge" title="${esc(r.closedText)}">cerrada</span>` : '') + pendingBadge(r);
     if (!l) return `<tr class="none${r.closed ? ' closed' : ''}"><td>${link}</td><td colspan="5">${r.error ? 'error: ' + esc(r.error) : 'sin ofertas'}</td><td class="num">${r.replies}</td><td></td></tr>`;
     const has = l.salary != null;
     const later = l.laterPosts ? `<span class="tag">+${l.laterPosts} msg después</span>` : '';
