@@ -140,7 +140,8 @@ function parseOffer(raw) {
 }
 
 // ---------- Puja cerrada ----------
-const CLOSED = /\bpuja\s+(?:cerrada|terminada|finalizada|finalizado|cerrado)\b|\b(?:cerrada|terminada|adjudicada|cerrado|terminado|adjudicado)\b/i;
+const CLOSED = /\bpuja\s+(?:cerrada|terminada|finalizada|finalizado|cerrado)\b|\b(?:cerrada|terminada|adjudicada|cerrado|terminado|adjudicado|fichado|fichada)\b/i;
+const PENDING = /\bfich[ao]\s+tras\s+(\d{1,3})\s*(?:h\b|horas?)/i;
 
 // ---------- Thread ----------
 function threadName(html, slug) {
@@ -191,10 +192,17 @@ async function loadThread(slug) {
       const p = replies[replies.length - 1];
       last = { user: p.user, when: p.when, post: p.post, salary: null, years: null, team: '', raw: p.text.slice(0, 200), laterPosts: 0 };
     }
-    const closedPost = replies.find(p => CLOSED.test(p.text));
+    const closedPost = replies.find(p => CLOSED.test(p.text) || PENDING.test(p.text));
     const closed = !!closedPost;
+    let pending = null;
+    if (!closed) {
+      for (let i = replies.length - 1; i >= 0; i--) {
+        const m = replies[i].text.match(PENDING);
+        if (m) { pending = { hours: +m[1], when: replies[i].when }; break; }
+      }
+    }
     if (closed && last) last.laterPosts = 0;
-    return { slug, url, name, replies: maxPost - 1, last, closed, closedText: closedPost ? closedPost.text.slice(0, 80) : '', parsed: posts.length };
+    return { slug, url, name, replies: maxPost - 1, last, closed, pending, closedText: closedPost ? closedPost.text.slice(0, 80) : '', parsed: posts.length };
   } catch (e) {
     return { slug, url, name: slug.replace(/^\d+-/, '').replace(/-/g, ' '), replies: 0, last: null, error: e.message };
   }
@@ -239,4 +247,4 @@ exports.handler = async (event) => {
   }
 };
 
-exports._test = { CLOSED, parseOffer, parsePosts, htmlToText, parseList, resolveDate };
+exports._test = { CLOSED, PENDING, parseOffer, parsePosts, htmlToText, parseList, resolveDate };
