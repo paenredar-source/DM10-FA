@@ -48,10 +48,12 @@ function parseList(html) {
 // ---------- HTML -> Text ----------
 function decodeEntities(s) {
   return s
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&bull;|&middot;/g, '•').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#0*39;|&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&([aeiouAEIOU])(acute|grave|uml);/g, (_, v, t) => v)
+    .replace(/&ntilde;/g, 'ñ').replace(/&Ntilde;/g, 'Ñ');
 }
 
 function htmlToText(html) {
@@ -90,7 +92,7 @@ function parsePosts(text, today) {
   let nm;
   while ((nm = nameRe.exec(text))) if (nm[2].toLowerCase() === nm[1]) names[nm[1]] = nm[2];
 
-  const hdr = /Mensajes:\s*[\d.,]+\s*Desde:\s*\d{1,2}\/\w{3}\/\d{4}[\s\S]{0,80}?#(\d+)\s*•\s*(Hoy|Ayer|\d{1,2}\/\w{3}\/\d{4}),?\s*(\d{1,2}:\d{2})/g;
+  const hdr = /Mensajes:\s*[\d.,]+\s*Desde:\s*\d{1,2}\/\w{3}\/\d{4}[\s\S]{0,80}?#(\d+)[\s•·|\-–]*(Hoy|Ayer|\d{1,2}\/\w{3}\/\d{4}),?\s*(\d{1,2}:\d{2})/g;
   const heads = [];
   let m;
   while ((m = hdr.exec(text))) {
@@ -101,7 +103,7 @@ function parsePosts(text, today) {
   const posts = [];
   heads.forEach((h, i) => {
     let region = text.slice(h.end, i + 1 < heads.length ? heads[i + 1].start : text.length);
-    region = region.replace(/^\s*•?\s*Editado por\s*⟦U:[^⟧]+⟧\s*\S+/, '');
+    region = region.replace(/^[\s•·]*Editado por\s*⟦U:[^⟧]+⟧\s*\S+/, '');
     const cut = region.search(/⟦U:|\sArriba\s/);
     if (cut >= 0) region = region.slice(0, cut);
     const date = resolveDate(h.dateTok, today);
@@ -213,6 +215,18 @@ exports.handler = async (event) => {
       const slugs = (q.slugs || '').split(',').map(s => s.trim()).filter(s => /^\d+-[a-z0-9_-]+$/i.test(s)).slice(0, 12);
       return json({ threads: await Promise.all(slugs.map(loadThread)) });
     }
+    if (q.action === 'debug' && /^\d+-[a-z0-9_-]+$/i.test(q.slug || '')) {
+      const html = await get(`${BASE}/${FORUM}/${q.slug}/`);
+      const text = htmlToText(html);
+      const i = text.indexOf('Mensajes');
+      return json({
+        htmlLength: html.length,
+        textLength: text.length,
+        firstMensajesAt: i,
+        sample: i >= 0 ? text.slice(Math.max(0, i - 200), i + 900) : text.slice(0, 1200),
+        posts: parsePosts(text, madridToday())
+      });
+    }
     return json({ error: 'action fehlt' }, 400);
   } catch (e) {
     return json({ error: e.message }, 502);
@@ -220,3 +234,4 @@ exports.handler = async (event) => {
 };
 
 exports._test = { parseOffer, parsePosts, htmlToText, parseList, resolveDate };
+          
